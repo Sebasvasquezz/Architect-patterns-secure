@@ -2,6 +2,8 @@
 
 This project implements a property management system using Spring Boot and JPA. It allows users to perform CRUD (Create, Read, Update, Delete) operations on properties. The system includes a RESTful API for managing properties and a simple web interface for user interaction.
 
+<video controls src="images/execution.mp4" title="Title"></video>
+
 ## Getting Started
 
 These instructions will help you get a copy of the project up and running on your local machine for development and testing purposes.
@@ -73,17 +75,39 @@ You need to install the following tools and configure their dependencies:
     java -jar target/patrones-0.0.1-SNAPSHOT.jar
     ```
 
-    The application will start, and you can access the web interface at `http://localhost:8080`.
+    The application will start, and you can access the web interface at `https://localhost:8443`.
 
-    ![Execution in local](images/execution.gif)
+    ![Local execution](/images/browser.png)
 
 ## Deploiment in AWS
+To run the program on AWS, we need to have two instances:
+![AWS Instances](/images/awsInstances.png)
+
+In the instance called MySQL-Apache, MySQL and the Apache web server will be installed, and on the other instance, the Spring-boot app will be deployed. A Let's Encrypt certificate will be generated on each machine to implement the HTTPS protocol.
+
+Two DNS domains are also needed for each EC2 instance in order to generate Let's Encrypt certificates. For this, the following website allows us to generate free domains: https://www.duckdns.org/.
+
+![Domains](images/domains.png)
+
+* MySQL-Apache Instace - `apppropiedades.duckdns.org`
+
+* Apps Instance - `backpropiedades.duckdns.org`
+
+### Code changes:
 In order to deploy the project on AWS with the requested architecture, it is necessary to make some changes to the code:
 * application.properties:
 ![Changes application.properties](images/appProp.png)
 * Property Controller:
 ![Changes  Property Controller](images/propController.png)
-### Install and run MySQL:
+* User Controller:
+![Changes  User Controller](images/userController.png)
+* Script.js:
+![Changes  script](images/script.png)
+* user.png:
+![Changes  user script](images/user.png)
+
+### MySQL-Apache Instace
+#### Install and run MySQL:
 * Install package repository:
     ```sh
     sudo yum install https://dev.mysql.com/get/mysql57-community-release-el7-11.noarch.rpm
@@ -106,7 +130,170 @@ In order to deploy the project on AWS with the requested architecture, it is nec
     ```sh
     sudo systemctl restart mysqld
     ```
-### Run the app:
+#### Install and run Apache: 
+
+* Connect to the EC2 instance.
+
+    First, you must connect to the EC2 instance using SSH. Use the following command:
+
+    ```bash
+    ssh -i "path/to/your/key.pem" ec2-user@your-ip-address
+
+    ```
+
+*  Update the packages.
+    ```bash
+    sudo yum update -y
+    ```
+
+*  Install Apache.
+
+    ```bash
+    sudo yum install httpd -y
+    ```
+
+*  Start and enable Apache.
+
+    Once installed, the Apache service must be started and configured to start automatically when the system boots.
+    
+
+    ```bash
+    sudo systemctl start httpd
+    sudo systemctl enable httpd
+    ```
+
+
+* Check the status of Apache:
+
+
+    ```bash
+    sudo systemctl status httpd
+    ```
+
+#### Let's Encrypt certificate
+
+* Install Dependencies:
+
+    To use Certbot, first, install Python and pip (a package manager for Python):
+
+    ```bash
+    sudo yum install python3-pip -y
+    sudo pip3 install certbot
+
+    ```
+    You also need to install the Apache integration package:
+
+     ```bash
+    sudo yum install python-certbot-apache
+
+    ```
+*   Configure Apache
+
+    Edit the configuration file for your virtual host for your domain:
+
+    ```bash
+    sudo nano /etc/httpd/conf.d/"your-domain".conf
+    ```
+
+    Make sure you have something like the following in your configuration file:
+
+    ```bash
+    <VirtualHost *:80>
+        ServerName "your-domain"
+        DocumentRoot /var/www/html
+    </VirtualHost>
+    ```
+
+
+* Run Certbot
+
+    Once the Apache configuration file is ready, you can run Certbot to obtain the SSL certificate:
+
+    ```bash
+    sudo certbot --apache -v -d "your-domain"
+    ```
+
+#### Upload frontend files
+
+* Proceed to upload all the frontend files to the directory root using sftp.
+
+    ```bash
+    sftp -i "path/to/your/key.pem"ec2-user@your-ip-address
+    ```
+    ```bash
+    put "file"
+    ```
+* Now, you have to move all the files to the correct directory:
+    ```bash
+    sudo mv "file" /var/www/html
+    ```
+### MySQL-Apache Instace
+
+#### Let's Encrypt certificate
+* Connect to the EC2 instance.
+
+    First, you must connect to the EC2 instance using SSH. Use the following command:
+
+    ```bash
+    ssh -i "path/to/your/key.pem"ec2-user@your-ip-address
+    ```
+*  Install Certbot
+
+    You can do so using the following commands:
+
+    ```bash
+    sudo yum update -y
+    sudo yum install -y certbot python2-certbot-apache
+
+    ```
+
+*  Obtain a Let's Encrypt Certificate
+
+    ```bash
+    sudo certbot --apache -v -d "your-domain"
+
+    ```
+
+
+    This command will generate the certificate files, usually located in /etc/letsencrypt/live/your_domain.com/:
+
+    + fullchain.pem: This is the certificate chain.
+    + privkey.pem: This is the private key
+
+*  Copy the certificates to a location accessible by Spring Boot
+
+    ```bash
+    sudo cp /etc/letsencrypt/live/"your-domain"/fullchain.pem /home/ec2-user/
+
+    sudo cp /etc/letsencrypt/live/"your-domain"/privkey.pem /home/ec2-user/
+    ```
+
+*  Verify access permissions
+
+    ```bash
+    sudo chown ec2-user:ec2-user /home/ec2-user/privkey.pem
+    sudo chmod 600 /home/ec2-user/privkey.pem
+
+    sudo chown ec2-user:ec2-user /home/ec2-user/fullchain.pem
+    sudo chmod 600 /home/ec2-user/fullchain.pem
+    ```
+
+* Convert the certificate to a PKCS12 format: Spring Boot requires a keystore in PKCS12 format.
+
+    ```bash
+    sudo yum install openssl -y
+    ```
+
+    ```bash
+    openssl pkcs12 -export -in /home/ec2-user/fullchain.pem -inkey /home/ec2-user/privkey.pem \ -out /home/ec2-user/backpropiedades.p12 -name "backpropiedades" -password pass:secret
+    ```
+
+    ```bash
+    sudo chown ec2-user:ec2-user /home/ec2-user/keystore.p12
+    sudo chmod 600 /home/ec2-user/keystore.p12
+    ```
+
+#### Run the app:
 * We upload the jar of our application to the other EC2 instance using sftp:
     ![Upload jar](images/jar.png)
 
@@ -118,11 +305,9 @@ In order to deploy the project on AWS with the requested architecture, it is nec
     ```sh
     java -jar patrones-0.0.1-SNAPSHOT
     ```
-    The application will start, and you can access the web interface at `http://54.145.132.193:8080/`(The link may change over time).
+    The application will start, and you can access the web interface at `http://apppropiedades.duckdns.org:8443/`(The link may change over time) as shown in the initial video.
 
-    ![Execution in AWS](images/aws.gif)
 ## Usage
-
 The user interface allows users to manage property records. Below are the key features:
 
 #### 1. Add Property
@@ -169,22 +354,47 @@ The application provides the following RESTful API endpoints:
 | GET      | `/properties/{id}`   | Get a property by its ID       |
 | PUT      | `/properties/{id}`   | Update a property by its ID    |
 | DELETE   | `/properties/{id}`   | Delete a property by its ID    |
+| POST     | `/api/users/register`   | Registers a new user     |
+| POST     | `/api/users/authenticate`   | Authenticates a user by validating the username and password     |
 
 ## Architectural Diagram
 ![Architectural Diagram](images/diagram.png)
-This project follows a standard MVC (Model-View-Controller) architecture:
+This diagram represents the architecture of the system deployed across two AWS EC2 instances. The system is divided into two main components: one instance for hosting the Spring Boot backend and another for the Apache server and MySQL database. Below is a detailed description of the key components and their interactions:
 
-1. **Controller**: Handles incoming HTTP requests and sends responses.
-2. **Service**: Encapsulates business logic and interacts with the repository.
-3. **Repository**: Manages data persistence using Spring Data JPA.
-4. **Model**: Represents the entity (Property) that is mapped to a database table.
+### 1. **User Interaction**
+   - **User**: Interacts with the system via a web browser.
+   - **Browser**: Sends HTTPS requests to both the backend (Spring Boot) and the frontend (Apache server) hosted on separate EC2 instances.
 
-### Overview
+### 2. **Frontend (EC2 MySQL-Apache Instance)**
+   - This instance hosts both the Apache server and the MySQL database.
+   - **MySQL Database**: Stores all persistent data such as user information, property data, and more. Accessible via the Apache server and Spring Boot backend.
+   - **Apache Server**: Serves the frontend assets (HTML, CSS, and JavaScript) to the browser.
+   - **Frontend Assets**:
+     - **JavaScript**: Handles client-side logic and interactions.
+     - **CSS**: Manages the styling of the frontend.
+     - **HTML**: Provides the structure of the web pages served to the user.
 
-- **PropertyController**: Handles API requests for managing properties.
-- **PropertyService**: Provides business logic for creating, reading, updating, and deleting properties.
-- **PropertyRepository**: Interface for CRUD operations on the `Property` entity, leveraging Spring Data JPA.
-- **Property**: Entity class representing a property in the system, including attributes such as address, price, size, and description.
+### 3. **Backend (EC2 Apps Instance)**
+   - This instance hosts the Spring Boot application, which handles business logic and API endpoints.
+   - **Spring Boot Backend**: Processes user requests, performs CRUD operations, and manages business logic.
+   - **PropertyController**: Handles HTTP requests related to properties, such as retrieving and updating property data.
+   - **UserController**: Manages user-related operations like registration and authentication.
+   - **PropertyService**: Contains the business logic for property management.
+   - **UserService**: Contains the business logic for user management and authentication.
+   - **PropertyRepository**: Interacts with the MySQL database to perform CRUD operations on property data.
+   - **UserRepository**: Interacts with the MySQL database to handle user data operations.
+
+### 4. **Communication**
+   - **HTTPS Communication**:
+     - The browser communicates with the Apache server via HTTPS on port 443 and with the backend via HTTPS on port 8443.
+     - The backend communicates with the MySQL database on port 3306.
+
+### 5. **Domain Information**
+   - The following domains are used to access the services:
+     - **apppropiedades.duckdns.org**: For accessing the Apache server and MySQL database.
+     - **backpropiedades.duckdns.org**: For accessing the Spring Boot backend.
+
+This architecture ensures separation of concerns by dividing the frontend and backend into different EC2 instances while leveraging a centralized MySQL database. The communication between the components is secured using HTTPS.
 
 ## Class Diagram
 
@@ -229,6 +439,32 @@ The class diagram represents the key components of the property management appli
    - `setDescription(String description)`: Sets the description of the property.
 
 The `PropertyController` interacts with the `PropertyService`, which in turn communicates with the `PropertyRepository` to handle database operations. The `Property` class serves as the data model that is stored and retrieved from the database.
+
+1. **UserController**: This is the REST controller that manages user-related HTTP requests. It provides endpoints for user registration and authentication. The methods in this class delegate the business logic to the `UserService`.
+
+   - `registerUser(User user)`: Registers a new user in the system.
+   - `authenticate(User user)`: Authenticates a user and returns a token or response indicating successful login.
+
+2. **UserService**: This class contains the business logic related to user management. It interacts with the `UserRepository` to perform CRUD operations on users. It handles tasks such as saving new users, loading user details for authentication, and verifying credentials.
+
+   - `loadUserByUsername(String username)`: Retrieves user details needed for authentication by the username.
+   - `save(User user)`: Saves a new user to the database.
+   - `authenticate(String username, String rawPassword)`: Verifies the username and password for authentication.
+
+3. **UserRepository**: This interface extends Spring Data JPA's `JpaRepository` and provides the data access layer for the `User` entity. It includes methods to find users by their username. The implementation is automatically provided by Spring Data JPA.
+
+   - `findByUsername(String username)`: Finds a user in the database by their username.
+
+4. **User**: This is the entity class that represents a user in the system. It includes attributes like `id`, `username`, and `password`. This class is mapped to the database and is used by the repository for persistence.
+
+   - `getId()`: Returns the ID of the user.
+   - `setId(Long id)`: Sets the ID of the user.
+   - `getUsername()`: Returns the username of the user.
+   - `setUsername(String username)`: Sets the username of the user.
+   - `getPassword()`: Returns the password of the user.
+   - `setPassword(String password)`: Sets the password of the user.
+
+The `UserController` interacts with the `UserService`, which then communicates with the `UserRepository` to manage users in the database. The `User` class serves as the data model that is persisted and retrieved during the authentication and registration processes.
 
 
 ### Docker Compose Configuration
@@ -276,7 +512,7 @@ I use [GitHub](https://github.com/) for versioning. For the versions available, 
 
 ## Date
 
-September 30, 2024
+October 16, 2024
 
 ## License
 
